@@ -1,0 +1,8 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+yfinance>=0.2.55
+pandas>=2.3
+numpy>=2.2
+httpx>=0.28
+python-dotenv>=1.1
+pytest>=8.3

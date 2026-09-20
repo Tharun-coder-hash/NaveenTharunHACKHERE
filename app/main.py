@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from .analytics import correlation_matrix, daily_returns, ema, max_drawdown, sma, window_metrics
 from .data import ASSETS, fred_events, market_data
 from .portfolio import simulate_portfolio
+from .reporting import build_report, report_to_text
 
 load_dotenv()
 app = FastAPI(title="FEICDE", description="Financial Event Impact & Counterfactual Decision Engine")
@@ -119,3 +120,45 @@ def insights(date: str, window: int = Query(default=5, ge=1, le=30)):
         "evidence": metrics,
         "limitations": "This is a historical association around an event date. It is not causal evidence, investment advice, or a forecast, and the backend calculations are not independently invented by an AI model.",
     }
+
+
+@app.get("/api/report")
+def generate_report(date: str, window: int = Query(default=5, ge=1, le=30), scenario: str = "User decision", from_date: str | None = None, to_date: str | None = None):
+    impact = event_impact(date, window)
+    metrics = impact["metrics"]
+    scenario_weights = {asset: 1 / len(metrics) for asset in metrics}
+    portfolio = simulate_portfolio(_prices()[0], scenario_weights, 10000, 0.001)
+    report = build_report(
+        event_date=date,
+        nearest_market_date=impact["nearest_market_date"],
+        window=window,
+        metrics=metrics,
+        scenario_name=scenario,
+        portfolio=portfolio,
+        from_date=from_date or date,
+        to_date=to_date or date,
+    )
+    return {"report": report, "download": report_to_text(report)}
+
+
+@app.get("/api/report/download")
+def download_report(date: str, window: int = Query(default=5, ge=1, le=30), scenario: str = "User decision", from_date: str | None = None, to_date: str | None = None):
+    impact = event_impact(date, window)
+    metrics = impact["metrics"]
+    scenario_weights = {asset: 1 / len(metrics) for asset in metrics}
+    prices, _ = _prices()
+    portfolio = simulate_portfolio(prices, scenario_weights, 10000, 0.001)
+    report = build_report(
+        event_date=date,
+        nearest_market_date=impact["nearest_market_date"],
+        window=window,
+        metrics=metrics,
+        scenario_name=scenario,
+        portfolio=portfolio,
+        from_date=from_date or date,
+        to_date=to_date or date,
+    )
+    file_path = Path(".cache") / f"feicde-report-{date}.txt"
+    file_path.parent.mkdir(exist_ok=True)
+    file_path.write_text(report_to_text(report), encoding="utf-8")
+    return FileResponse(file_path, media_type="text/plain", filename=f"feicde-report-{date}.txt")
